@@ -1,0 +1,4 @@
+interface:
+  display_name: "本地 OCR（macOS Vision）"
+  short_description: "使用 macOS Vision 框架将 PDF 和图片转为 Markdown 与可搜索 PDF，完全离线，无需微信或虚拟机。"
+  default_prompt: "Use $local-wechat-ocr to OCR this local PDF or image using macOS Vision framework."
