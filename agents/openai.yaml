@@ -1,4 +1,4 @@
 interface:
   display_name: "本地 OCR（macOS Vision + Ollama 智能脱敏）"
   short_description: "使用 macOS Vision 框架完全离线将 PDF 和图片转为 Markdown 与可搜索 PDF，支持联动本地 Ollama 对诉讼材料进行智能语义脱敏，全程不出局域网。"
-  default_prompt: "Use $local-wechat-ocr to OCR this local PDF or image using macOS Vision framework. Add --anonymize if the user requests data redaction, anonymization, or privacy scrubbing."
+  default_prompt: "Use $local-ocr-anonymize to OCR this local PDF or image using macOS Vision framework. Add --anonymize if the user requests data redaction, anonymization, or privacy scrubbing."
