@@ -19,6 +19,7 @@ Options:
   --dpi N                 Render DPI for PDFs (default: 220)
   --anonymize             Enable 100% offline smart anonymization via local Ollama
   --anonymize-model NAME  Ollama model to use (default: gemma3:latest)
+  --merge-pages           Strip page-break headers (## 第 N 页) and produce flowing text
   --dry-run               Validate and print the planned command only
   -h, --help              Show this help
 EOF
@@ -30,6 +31,7 @@ recursive=false
 continue_on_error=false
 dry_run=false
 anonymize=false
+merge_pages=false
 dpi=220
 
 while (($#)); do
@@ -39,6 +41,7 @@ while (($#)); do
     --dpi)               shift; dpi="$1"; shift ;;
     --anonymize)         anonymize=true; shift ;;
     --anonymize-model)   shift; OLLAMA_MODEL="$1"; shift ;;
+    --merge-pages)       merge_pages=true; shift ;;
     --dry-run)           dry_run=true; shift ;;
     -h|--help)           usage; exit 0 ;;
     --)                  shift; break ;;
@@ -136,6 +139,7 @@ if [[ "$dry_run" == true ]]; then
   printf 'Input:          %s\n' "$input"
   printf 'Anonymize:      %s\n' "$anonymize"
   printf 'Ollama model:   %s\n' "$OLLAMA_MODEL"
+  printf 'Merge pages:    %s\n' "$merge_pages"
   printf 'OCR binary:     %s\n' "$OCR_BIN"
   printf 'Job root:       %s\n' "$job_root"
   exit 0
@@ -247,20 +251,48 @@ except Exception as e:
   fi
 }
 
-# ── Run OCR (+ optional anonymization per file) ───────────────────────────────
+# ── Merge-pages: strip "## 第 N 页" headers and collapse blank lines ──────────
+merge_pages_file() {
+  local md_file="$1"
+  python3 - "$md_file" <<'PYEOF'
+import sys, re
+from pathlib import Path
+
+path = Path(sys.argv[1])
+text = path.read_text(encoding="utf-8")
+
+# Remove page-break headings (## 第 N 页) and surrounding blank lines
+text = re.sub(r'\n*##\s*第\s*\d+\s*页\s*\n+', '\n', text)
+text = re.sub(r'^##\s*第\s*\d+\s*页\s*\n+', '', text)   # if at very start
+
+# Collapse 3+ consecutive blank lines to one
+text = re.sub(r'\n{3,}', '\n\n', text)
+text = text.strip() + '\n'
+
+path.write_text(text, encoding="utf-8")
+PYEOF
+  echo "  [merge-pages] done → $(basename "$md_file")" >&2
+}
+
+# ── Run OCR (+ optional anonymization + optional page merge per file) ─────────
 run_ocr_on_file() {
   local f="$1"
   "$OCR_BIN" "$f" --output-dir "$job_root/output" --dpi "$dpi"
 
+  local stem
+  stem="$(basename "${f%.*}")"
+  local md_out="$job_root/output/${stem}.md"
+
   if [[ "$anonymize" == true ]]; then
-    local stem
-    stem="$(basename "${f%.*}")"
-    local md_out="$job_root/output/${stem}.md"
     if [[ -f "$md_out" ]]; then
       local_anonymize_file "$md_out"
     else
       echo "  [anonymize] Warning: expected $md_out not found, skipping" >&2
     fi
+  fi
+
+  if [[ "$merge_pages" == true && -f "$md_out" ]]; then
+    merge_pages_file "$md_out"
   fi
 }
 
@@ -305,7 +337,8 @@ cat > "$result_json" << JSON
   "markdown_files": $md_count,
   "pdf_files": $pdf_count,
   "anonymize_applied": $anonymize,
-  "ollama_model": "$OLLAMA_MODEL"
+  "ollama_model": "$OLLAMA_MODEL",
+  "merge_pages_applied": $merge_pages
 }
 JSON
 
@@ -314,6 +347,7 @@ printf 'Markdown files:  %s\n' "$md_count"
 printf 'PDF/A files:     %s\n' "$pdf_count"
 printf 'Anonymization:   %s\n' "$anonymize"
 [[ "$anonymize" == true ]] && printf 'Ollama model:    %s\n' "$OLLAMA_MODEL"
+printf 'Merge pages:     %s\n' "$merge_pages"
 [[ "$fail_count" -gt 0 ]] && {
   printf 'Failed files:    %s\n' "$fail_count"
   for f in "${fail_files[@]}"; do printf '  - %s\n' "$f"; done
